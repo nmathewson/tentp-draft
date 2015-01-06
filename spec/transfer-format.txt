@@ -1,0 +1,197 @@
+
+1. Introduction
+
+   This document describes an encrypted, authenticated transport
+   protocol for use over TCP or a similar reliable in-order transport.
+   It is not a complete protocol; it only describes the record format
+   that the participants use after they have negotiated initial
+   symmetric keys.
+
+2. Preliminaries
+
+2.1. Underlying primitives and parameters
+
+   We assume the existence of the following:
+
+     - A keyed message-authentication system, possibly with single-use
+       keys. Its keys are of length AUTH_KEYLEN; its outputs are of
+       length AUTH_LEN.
+
+     - A keyed stream cipher, with key length of length ENC_KEYLEN.
+
+     - Optionally, a fast secure random number generator.
+
+   Let COUNTERLEN be an integer at least 8.  No more than
+   2**(8*COUNTERLEN) records may be sent in a single session of this
+   protocol.
+
+   Define MAX_PLAINTEXT_RECORD_LEN = 16383.
+
+   Define RECORD_HEADER_LEN == 8.
+
+2.2. Notation
+
+   We denote the encrypted value of a plaintext P with a key K as
+   ENC(K, P).
+
+   We denote the authenticator that authenticates plaintext P with a
+   key K as AUTH(K, P).
+
+   We denote the N-byte big-endian encoding of the integer I as
+   INT(N, I).
+
+   We deonte the concatenation of A and B as A | B.
+
+3. Protocol
+
+3.1. Setup and state
+
+   At the beginning of the protocol, each party must have a pair of
+   initial symmetric keys of length KEYLEN.  These keys must be
+   shared, and must be known only by the two parties that will
+   communicate.  No key must ever be negotiated more than once.
+
+   Without loss of generality, assume that our initial sending key is
+   KSEND_0, and our initial receiving key is KRECV_0.  The other
+   party's initial sending key will be our initial receiving key, and
+   vice versa.  Each should be of length
+
+   After each record is sent, the sending key will change.  After each
+   record is received, the receiving key will change.  Let NSEND be
+   the number of records we have sent and NRECV be the number of
+   blocks we have received.  (These should be COUNTERLEN-byte counters.)  The
+   current sending key is KSEND_NSEND, and the current receiving key
+   is KRECV_NRECV.
+
+   The state is < NRECV, KRECV_NRECV, NSEND, KSEND_NSEND >.
+
+3.2. The record format.
+
+   Data is sent divided into records.  No semantic importance is
+   attached to record divisions.
+
+   The plaintext of a record header is:
+
+      struct tentp_record_header {
+      	u8 command IN [ CMD_DATA, CMD_CLOSE, ... ];
+	u16 length;
+	u8 padding_length;
+	u32 reserved;
+      };
+
+    To encrypt a plaintext block P, a communicating party first generates
+    a tentp_plaintext_record with:
+
+        command == CMD_DATA
+	length == len(P)
+	padding_length == (any random value, or 0)
+        reserved == 0.
+
+    Note that len(P) must be no greater than MAX_PLAINTEXT_RECORD_LEN.
+
+    Define LEN_PT_REC == len(P) + padding_length.
+
+    The communicating party then uses the stream cipher and the KSEND
+    key to generate (2 * AUTH_LEN + RECORD_HEADER_LEN + LEN_PT_REC ENC_KEYLEN + )
+    bytes:
+
+       struct tentp_record_keys {
+       	  // should we make this align better ???
+          u8 authkey1[AUTH_KEYLEN];
+	  u8 authkey2[AUTH_KEYLEN];
+	  u8 header_stream[RECORD_HEADER_LEN];
+	  u8 body_stream[LEN_PT_REC];
+	  u8 next_key[ENC_KEYLEN];
+       };
+
+    The sending party then build an encrypted record as follows:
+
+       struct tentp_encrypted_record {
+       	  u8 header_auth[AUTH_LEN];
+	  u8 encrypted_header[RECORD_HEADER_LEN];
+	  u8 body_auth[AUTH_LEN];
+	  u8 encrypted_body[LEN_PT_REC];
+       };
+
+    The bytes in 'header_stream' are xored with the plaintext encoded
+    'tentp_record_header' to produce 'encrypted_header'.
+
+    The bytes in body_stream are xored with the padded plaintext to
+    produce 'encrypted_body'.
+
+    The message authentication system is run to produce:
+
+      header_auth = AUTH(authkey1, INT(COUNTERLEN, NSEND) | encrypted_header)
+
+      body_auth = AUTH(authkey2, INT(COUNTERLEN, NSEND) | encrypted_body)
+
+    Then tentp_record is sent, and the state is updated to increment NSEND,
+    and replace KSEND with 'next_key'.
+
+3.3. Receiving records
+
+    Upon reciving an encrypted record, a communicating party first
+    expands the KRECV key to produce the authkey1, authkey2, and header_stream
+    fields of tentp_record_keys.
+
+    The recipient then reads AUTH_LEN + RECORD_HEADER_LEN bytes to
+    fill in the header_auth and encrypted_header fields of the
+    tentp_encrypted record structure.  If header_auth is not equal to
+          AUTH(authkey1, INT(COUNTERLEN,NRECV) | encrypted_header)
+    then an error has occurred.  See 3.4 below.
+
+    Otherwise, the recipient computes the plaintext header by xoring
+    header_stream with encrypted_header.  If 'length' is greater than
+    MAX_PLAINTEXT_RECORD_LEN, an error has occurred. See 3.4 below.
+
+    If the 'command' field is not recognized, then an error has
+    occurred. See 3.4 beflow.
+
+    If length is 0 and padding_len is 0, then there will be no more in
+    this encrytped record; the next record will begin with another
+    encrypted header.
+
+    Now, the recipient must read AUTH_LEN + 'length' + padding_length
+    bytes, to fill in body_auth and encrypted_body.  If body_auth is
+    not equal to:
+          AUTH(authkey2, INT(COUNTERLEN,NRECV) | encrypted_body)
+    then an error has occurred. See 3.4 below.
+
+    Otherwise, the recipient uses the stream cipher and the KRECV key
+    to produce the body_stream field of tentp_record_keys, and
+    computes the body plaintext as the xor of body_stream and the
+    first 'length' bytes of encrypted_body.
+
+    The padding is completely ignored.
+
+3.4. Handling errors.
+
+    If an error occurs, the party that notices the error must close
+    the connection immediately.
+
+4. State transitions
+
+   The state machine for reading is independent of all writing processes.
+
+         ------
+         I    I
+         I    V
+    [READING HEADER] <--------> [READING BODY] -----> [GOT CLOSED]
+            I                       I
+	    I                       I
+	    ------>[ERROR]<----------
+
+5. Recommended instantiation
+
+   We recommend that the AUTH algorithm be Poly1305, so AUTH_LEN == 16
+   and AUTH_KEYLEN == 32.
+
+   We recommend that the stream cipher be ChaCha20.  Consider the ChaCha20
+   and IV as a single 'key' for our purposes, we have ENC_KEYLEN ==
+   40.
+
+6. Open issues and ideas
+
+   B.  Can we do anything to make alignment better?  Should we?
+
+
