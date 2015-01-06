@@ -1,4 +1,16 @@
 
+THIS IS A DRAFT
+
+
+IT IS A DRAFT
+
+
+SERIOUSLY,  IT IS NOT A FINAL DOCUMENT.
+
+
+(Authors so far: Nick Mathewson and Yawning Angel)
+
+
 1. Introduction
 
    This document describes an encrypted, authenticated transport
