@@ -85,18 +85,18 @@ SERIOUSLY,  IT IS NOT A FINAL DOCUMENT.
    The plaintext of a record header is:
 
       struct tentp_record_header {
-      	u8 command IN [ CMD_DATA, CMD_CLOSE, ... ];
-	u16 length;
-	u8 padding_length;
-	u32 reserved;
+        u8 command IN [ CMD_DATA, CMD_CLOSE, ... ];
+        u16 length;
+        u8 padding_length;
+        u32 reserved;
       };
 
     To encrypt a plaintext block P, a communicating party first generates
     a tentp_plaintext_record with:
 
         command == CMD_DATA
-	length == len(P)
-	padding_length == (any random value, or 0)
+        length == len(P)
+        padding_length == (any random value, or 0)
         reserved == 0.
 
     Note that len(P) must be no greater than MAX_PLAINTEXT_RECORD_LEN.
@@ -108,21 +108,21 @@ SERIOUSLY,  IT IS NOT A FINAL DOCUMENT.
     bytes:
 
        struct tentp_record_keys {
-       	  // should we make this align better ???
-          u8 authkey1[AUTH_KEYLEN];
-	  u8 authkey2[AUTH_KEYLEN];
-	  u8 header_stream[RECORD_HEADER_LEN];
-	  u8 body_stream[LEN_PT_REC];
-	  u8 next_key[ENC_KEYLEN];
+         // should we make this align better ???
+         u8 authkey1[AUTH_KEYLEN];
+         u8 authkey2[AUTH_KEYLEN];
+         u8 header_stream[RECORD_HEADER_LEN];
+         u8 body_stream[LEN_PT_REC];
+         u8 next_key[ENC_KEYLEN];
        };
 
     The sending party then build an encrypted record as follows:
 
        struct tentp_encrypted_record {
-       	  u8 header_auth[AUTH_LEN];
-	  u8 encrypted_header[RECORD_HEADER_LEN];
-	  u8 body_auth[AUTH_LEN];
-	  u8 encrypted_body[LEN_PT_REC];
+         u8 header_auth[AUTH_LEN];
+         u8 encrypted_header[RECORD_HEADER_LEN];
+         u8 body_auth[AUTH_LEN];
+         u8 encrypted_body[LEN_PT_REC];
        };
 
     The bytes in 'header_stream' are xored with the plaintext encoded
@@ -190,8 +190,8 @@ SERIOUSLY,  IT IS NOT A FINAL DOCUMENT.
          I    V
     [READING HEADER] <--------> [READING BODY] -----> [GOT CLOSED]
             I                       I
-	    I                       I
-	    ------>[ERROR]<----------
+            I                       I
+            ------>[ERROR]<----------
 
 5. Recommended instantiation
 
