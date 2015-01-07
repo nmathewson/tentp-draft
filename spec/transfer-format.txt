@@ -92,7 +92,7 @@ SERIOUSLY,  IT IS NOT A FINAL DOCUMENT.
       };
 
     To encrypt a plaintext block P, a communicating party first generates
-    a tentp_plaintext_record with:
+    a tentp_record_header with:
 
         command == CMD_DATA
         length == len(P)
@@ -104,7 +104,7 @@ SERIOUSLY,  IT IS NOT A FINAL DOCUMENT.
     Define LEN_PT_REC == len(P) + padding_length.
 
     The communicating party then uses the stream cipher and the KSEND
-    key to generate (2 * AUTH_LEN + RECORD_HEADER_LEN + LEN_PT_REC ENC_KEYLEN + )
+    key to generate (2 * AUTH_LEN + RECORD_HEADER_LEN + LEN_PT_REC + ENC_KEYLEN)
     bytes:
 
        struct tentp_record_keys {
@@ -160,7 +160,7 @@ SERIOUSLY,  IT IS NOT A FINAL DOCUMENT.
     occurred. See 3.4 beflow.
 
     If length is 0 and padding_len is 0, then there will be no more in
-    this encrytped record; the next record will begin with another
+    this encrypted record; the next record will begin with another
     encrypted header.
 
     Now, the recipient must read AUTH_LEN + 'length' + padding_length
