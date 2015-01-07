@@ -1,0 +1,187 @@
+
+THIS IS A DRAFT
+
+
+IT IS A DRAFT
+
+
+SERIOUSLY, IT IS NOT A FINAL DOCUMENT.
+
+
+(Authors so far: Nick Mathewson and Yawning Angel)
+
+
+1. Introduction
+
+   This document describes a method for public key based client
+   authentication protocol for use over a TENT Protocol session. It is
+   not a complete protocol. It only describes the record formats that
+   participants use to establish the client after they have negotiated
+   initial symmetric keys.
+
+2. Preliminaries
+
+2.1. Underlying primitives and parameters
+
+   We assume the existence of the following:
+
+     - A cryptographic digest algorithm, with outputs of length DIGEST_LEN.
+
+     - A digital signature algorithm, based on public key cryptography.
+       It's public keys are of length SIG_PKLEN; it's signatures are of
+       length SIG_LEN.
+
+2.2. Notation
+
+   We denote the digest of plaintext P as H(P).
+
+   We deonte the signature of plantext P with a private key K as
+   SIGN(K, P).
+
+   We denote the concatenation of A and B as A | B.
+
+3. Protocol
+
+3.1 Setup and state
+
+   It is assumed that the client has generated a key pair for the signature
+   algorithm (K, k) and shared the public key (K) with the server, prior to
+   the session being established.
+
+   At the begining of the protocol, it is assumed that a TENTP session
+   has been initialized and is ready to send and receive data, and that
+   no records have been exchanged between the two parties. Clients
+   MUST NOT attempt to authenticate after sending any other records, and
+   server implementations MUST treat authentication attempts after
+   receiving any other records as an error.
+
+   As part of the key exchange process to initialize the TENTP session,
+   both parties run the digest algorithm over all bytes send and received
+   in each direction to produce:
+
+     CLIENT_HASH = H(handshake_client_to_server_data)
+
+     SERVER_HASH = H(handshake_server_to_client_data)
+
+   Two additional TENTP record commands are defined, CMD_AUTHENTICATE and
+   CMD_AUTHENTICATE_RESPONSE.
+
+3.2. The CMD_AUTHENTICATE record
+
+   The structure of CMD_AUTHENTICATE is:
+
+      struct tentp_authenticate_body {
+        // The only thing that needs a explicit length is the client_id?
+        @ptr start_of_signed_material;
+        u8 auth_type;
+        u8 client_id_length;
+        u8 client_id[client_id_length];
+        u8 client_public_key[SIG_PKLEN];
+        // Should the two digests be combined?
+        u8 hs_client_digest[DIGEST_LEN];
+        u8 hs_server_digest[DIGEST_LEN];
+        @ptr end_of_signed_material;
+        u8 signature[SIG_LEN];
+      };
+
+   The client first generates a tentp_authenticate_body with:
+
+      auth_type == (the signature/digest algorithm pair identifier)
+      client_id == (the optional client identifier)
+      client_id_length == len(client_id)
+      client_public_key == (the client's public key, K)
+      hs_client_digest == CLIENT_HASH
+      hs_server_digest == SERVER_HASH
+      signature = SIGN(k, auth_type | client_id_length | client_id |
+                          client_public_key | hs_client_digest |
+                          hs_server_digest)
+
+   The client then sends the CMD_AUTHENTICATE record to the server over
+   the TENTP session, with the 'command' field in the 'tentp_record_header'
+   set to CMD_AUTHENTICATE.
+
+   If a client receives a CMD_AUTHENTICATE record at any time, then an
+   error has occured.
+
+   Upon reciving a CMD_AUTHENTICATE record, the server validates it via
+   the following procudure.
+
+      1. If any other records have been received prior to the
+         CMD_AUTHENTICATE, an error has occured.
+
+      2. If 'auth_type' contains a unknown signature/digest pair
+         identifier, an error has occured.
+
+      3. If the length of the 'tentp_authenticate_body' is invalid given
+         'auth_type' and 'client_id_length' an error has occured.
+
+      4. If the 'client_id' + 'client_public_key' pair are unknown to the
+         server or are otherwise invalid an error has occured.
+
+      5. If the 'signature' field is invalid, that is, the signature of
+         the signed portion of the 'tentp_authenticate_body' is not signed
+         by the correct public key, an error has occured.
+
+      6. If 'hs_client_digest' does not match the server's CLIENT_HASH
+         an error has occured.
+
+      7. If 'hs_server_digest' does not match the server's SERVER_HASH
+         an error has occured.
+
+      8. The client has successfully authenticated.
+
+      // Steps 5-7 should be done regardless of error before dropping the
+      // connection, not sure how to phrase that.
+
+   Servers that require authentication MAY implement a reasonable time
+   limit on waiting for the CMD_AUTHENTICATE record, and treat a timeout
+   as an error.
+
+3.3. The CMD_AUTHENTICATE_RESPONSE record
+
+   The structure of a CMD_AUTHENTICATE_RESPONSE is a 'tentp_record_header'
+   with:
+
+      command == CMD_AUTHENTICATE_RESPONSE
+      length == 0
+      padding_length == (any random value or 0)
+      reserved == 0
+
+   The 'body_auth' and 'encrypted_body' are omitted unless padding is
+   specified, in which case, the 'encrypted_body' consistes of
+   'padding_length' bytes of padding.
+
+   Upon successful authentication, the server makes a
+   CMD_AUTHENTICATE_RESPONSE record and transmits it to a client.
+
+   If a server receives a CMD_AUTHENTICATE_RESPONSE record at any time,
+   then an error has occured.
+
+   Upon receiving a CMD_AUTHENTICATE_RESPONSE record, the client checks
+   that it is the first record received immediately after a CMD_AUTHENTICATE,
+   and that the payload is empty.  If either of those checks fail (ie: other
+   records have been sent, no CMD_AUTHENTICATE was sent) then an error has
+   occured.
+
+   Clients MAY implement a reasonable time limit on waiting for the
+   CMD_AUTHENTICATE_RESPONSE record , and treat a timeout as an error.
+
+4. State transitions
+
+   // I suck at ascii art :(
+
+5. Recommended instantiation
+
+   We recommend that the H algorithm be SHA256, so DIGEST_LEN == 32.
+
+   We recommend that the SIGN algorithm be Ed25519, so SIG_PKLEN = 32
+   and SIG_LEN == 64.
+
+   This Ed25519/SHA256 combination shall be called auth_type == 0.
+
+6. Open issues and ideas
+
+   A. Given our record size, we would need to fragment the
+      CMD_AUTHENTICATE if we ever want to use SPHINCS256.  This
+      probably is ok for now since an Ed25519 break would be all sorts of
+      bad for everything.
