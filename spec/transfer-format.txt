@@ -52,7 +52,7 @@ SERIOUSLY,  IT IS NOT A FINAL DOCUMENT.
    We denote the N-byte big-endian encoding of the integer I as
    INT(N, I).
 
-   We deonte the concatenation of A and B as A | B.
+   We denote the concatenation of A and B as A | B.
 
 3. Protocol
 
@@ -66,7 +66,7 @@ SERIOUSLY,  IT IS NOT A FINAL DOCUMENT.
    Without loss of generality, assume that our initial sending key is
    KSEND_0, and our initial receiving key is KRECV_0.  The other
    party's initial sending key will be our initial receiving key, and
-   vice versa.  Each should be of length
+   vice-versa.  Each should be of length KEYLEN.
 
    After each record is sent, the sending key will change.  After each
    record is received, the receiving key will change.  Let NSEND be
@@ -142,7 +142,7 @@ SERIOUSLY,  IT IS NOT A FINAL DOCUMENT.
 
 3.3. Receiving records
 
-    Upon reciving an encrypted record, a communicating party first
+    Upon receiving an encrypted record, a communicating party first
     expands the KRECV key to produce the authkey1, authkey2, and header_stream
     fields of tentp_record_keys.
 
@@ -198,9 +198,8 @@ SERIOUSLY,  IT IS NOT A FINAL DOCUMENT.
    We recommend that the AUTH algorithm be Poly1305, so AUTH_LEN == 16
    and AUTH_KEYLEN == 32.
 
-   We recommend that the stream cipher be ChaCha20.  Consider the ChaCha20
-   and IV as a single 'key' for our purposes, we have ENC_KEYLEN ==
-   40.
+   We recommend that the stream cipher be ChaCha20.  Considering the ChaCha20
+   key and IV as a single 'key' for our purposes, we have ENC_KEYLEN == 40.
 
 6. Open issues and ideas
 
