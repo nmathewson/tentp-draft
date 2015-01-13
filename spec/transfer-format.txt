@@ -71,8 +71,8 @@ SERIOUSLY,  IT IS NOT A FINAL DOCUMENT.
    After each record is sent, the sending key will change.  After each
    record is received, the receiving key will change.  Let NSEND be
    the number of records we have sent and NRECV be the number of
-   blocks we have received.  (These should be COUNTERLEN-byte counters.)  The
-   current sending key is KSEND_NSEND, and the current receiving key
+   records we have received.  (These should be COUNTERLEN-byte counters.)
+   The current sending key is KSEND_NSEND, and the current receiving key
    is KRECV_NRECV.
 
    The state is < NRECV, KRECV_NRECV, NSEND, KSEND_NSEND >.
@@ -205,4 +205,5 @@ SERIOUSLY,  IT IS NOT A FINAL DOCUMENT.
 
    B.  Can we do anything to make alignment better?  Should we?
 
-
+   C.  Add a CMD_PAD so that padding up to the maximum record size can be
+   sent/processed in one shot?
