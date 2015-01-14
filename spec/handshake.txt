@@ -1,0 +1,228 @@
+
+THIS IS A DRAFT
+
+
+IT IS A DRAFT
+
+
+SERIOUSLY,  IT IS NOT A FINAL DOCUMENT.
+
+
+(Authors so far: Nick Mathewson and Yawning Angel)
+
+
+const HS_VERSION = 1;
+
+const HS_NTOR = 0;
+
+const DIGEST_LENGTH = 32;
+
+const NTOR_ID_LENGTH = 20;
+const NTOR_PK_LENGTH = 32;
+const NTOR_AUTH_LENGTH = 32;
+
+struct hs_request {
+  u8 hs_version IN [ HS_VERSION ];
+  u8 hs_algorithm IN [ HS_NTOR ];
+  u16 hs_req_length;
+
+  union hs_request_data[hs_algorithm] {
+    HS_NTOR: struct hs_request_ntor ntor;
+  };
+}
+
+struct hs_request_ntor {
+  u8 client_pk[NTOR_PK_LENGTH];
+}
+
+struct hs_response {
+  u8 hs_version IN [ HS_VERSION ];
+  u8 hs_algorithm IN [ HS_NTOR ];
+  u16 hs_response_length;
+
+  union hs_response_data[hs_algorithm] {
+    HS_NTOR: struct hs_response_ntor ntor;
+  };
+
+  u8 hs_digest[DIGEST_LENGTH];
+}
+
+struct hs_response_ntor {
+  u8 node_id[NTOR_ID_LENGTH];
+  u8 node_id_key[NTOR_PK_LENGTH];
+  u8 server_pk[NTOR_PK_LENGTH];
+  u8 auth[DIGEST_LENGTH];
+}
+
+The version 1 handshake
+
+Properties:
+
+ * 1W-AKE.
+ * Clients do not require any pre-shared values with the server (not having
+   pre-shared values means the key exchange is unauthenticated).
+ * Trivially fingerprintable.
+
+Constants, functions, etc: 
+ PROTOID == "ntor-curve25519-sha256-1"
+ t_mac == PROTOID | ":mac"
+ t_key == PROTOID | ":key_extract"
+ t_verify == PROTOID | ":verify"
+ t_hs_digest == PROTOID | ":hs_digest'
+ m_expand == PROTOID | ":m_expand"
+
+ H(k, m) == HMAC-SHA256 with key 'k' and message 'm'.
+
+The server as part of it's long term state has:
+ * NODEID (ID, NTOR_ID_LENGTH bytes)
+ * Curve25519 keypair (B,b)
+
+1. Client generates ephemeral Curve25519 keypair X,x
+2. Client sends a hs_request_ntor.
+3. Server generates a ephemeral Curve25519 keypair Y,y
+4. Server computes:
+
+   secret_input = EXP(X,y) | EXP(X,b) | ID | B | X | Y | PROTOID
+   key_seed = h(t_key, secret_input)
+   verify = h(t_verify, secret_input)
+   auth_input = verify | id | b | y | x | protoid | "server"
+
+5. Server sends a hs_response ntor with:
+
+   resp.node_id = ID
+   resp.node_id_key = B
+   resp.server_pk = Y
+   resp.auth = H(t_mac, auth_input)
+   resp.hs_digest = H(t_hs_digest, req | resp.hs_version |
+     resp.hs_algorithm | resp.hs_response_length | resp.client_pk |
+     resp.node_id | resp.server_pk | resp.auth)
+
+6. Client validates resp.hs_digest
+7. Client decides if it likes resp.node_id & resp.node_id_key (TOFU,
+   pre-shared values, whatever).
+8. Client computes:
+
+   secret_input = EXP(Y,x) | EXP(Y,b) | ID | B | X | Y | PROTOID
+   key_seed = h(t_key, secret_input)
+   verify = h(t_verify, secret_input)
+   auth_input = verify | id | b | y | x | protoid | "server"
+
+9. Client validates H(t_mac, auth_input) matches resp.auth.
+
+10. Both sides agree on key_seed, and hs_digest.
+
+   key_seed is passed to HKDF to derive session keys.
+
+   hs_digest can be used as the value to sign as part of the optional client
+   authentication.
+
+Version 1 obfuscation (AKA: obfs5)
+
+Properties:
+
+ * Handshakes indistinguishable from random noise.
+ * Wraps the V1 unobfuscated handshake in authenticated encryption envelopes,
+   using Curve25519 + Elligator2.  Can in theory wrap any single
+   request/single response handshake though certain constants need
+   modification.
+ * No server side Curve25519 or Elligator2 operations till the client shows
+   it knows the server's long lived PK.
+ * No server side network traffic unless a valid request has been received.
+
+Client must know B before hand.
+epochHour() == time(NULL) / 3600 (Number of hours since the epoch).
+m_obfs == "obfs5-elligator2-sha256-1" | ":key_expand"
+req_padding_min == NTOR_ID_LENGTH + NTOR_PK_LENGTH + 2 * DIGEST_LENGTH
+resp_padding_min == NTOR_PK_LENGTH (representative not sent)
+padding_max == 8192
+
+1. Client generates a hs_request_ntor.
+2. Client generates a Elligator 2 compatible Curve25519 keypair Z,z, with
+   representative Z'.
+3. Client computes:
+
+   req_tag = HMAC-SHA256-128(B, Z')
+   hs_keys = HKDF-SHA256(m_obfs, t_key, EXP(B,z))
+   req_authkey[AUTH_KEYLEN]
+   resp_authkey[AUTH_KEYLEN]
+   req_stream_key[ENC_KEYLEN]
+   resp_stream_key[ENC_KEYLEN]
+
+4. Client computes:
+
+   obfs_req = ENC(req_stream_key, req | RAND(req_padding_min, padding_max))
+   obfs_req_auth = AUTH(req_authkey, obfs_req)
+   obfs_req_tag = HMAC-SHA256-128(B | epochHour(), Z' | obfs_req_auth |
+     obfs_req | req_tag)
+
+5. Client sends: Z' | obfs_req_auth | obfs_req | req_tag | obfs_req_tag.
+
+6. Server reads NTOR_PK_LENGTH bytes and calculates req_tag.
+7. Server reads+buffers till req_tag | obfs_req_tag is seen OR a timeout
+   occurs OR enough data has been read without req_tag that the request is
+   invalid.
+8. Server compares obfs_req_tag with the derived value from the buffered
+   data.
+9. Server obtains Z from Z'.
+10. Server computes:
+
+    hs_keys = HKDF-SHA256(m_obfs, t_key, EXP(Z,b))
+    req_authkey[AUTH_KEYLEN]
+    resp_authkey[AUTH_KEYLEN]
+    req_stream_key[ENC_KEYLEN]
+    resp_stream_key[ENC_KEYLEN]
+
+11. Server validates obfs_req_auth, then decrypts obfs_req to obtain the
+    hs_request_ntor.
+12. Server completes the ntor handshake, and generates a hs_response_ntor.
+13. Server computes:
+
+    (Yes, the parameters to RAND are different to normalize obfuscated
+    request/response lengths.)
+
+    obfs_resp = ENC(resp_stream_key, resp | RAND(resp_padding_min, padding_max))
+    obfs_resp_auth = AUTH(resp_authkey, obfs_resp)
+    resp_tag = HMAC-SHA256-128(B, obfs_resp_auth)
+    obfs_resp_tag = HMAC-SHA256-128(B | epochHour(), obfs_resp_auth |
+      obfs_resp | resp_tag)
+
+14. Server sends: obfs_resp_auth | obfs_resp | resp_tag | obfs_resp_tag.
+15. Client reads AUTH_LEN bytes and calcuates resp_tag.
+16. Client reads+buffers till resp_tag | obfs_resp_tag is seen OR a timeout
+    occurs OR enough data has been read without resp_tag that the request is
+    invalid.
+17. Client compares obfs_resp_tag with the derived value from the buffered
+    data.
+18. Client validates obfs_resp_auth, then decrypts obfs_resp to obtain the
+    hs_response_ntor.
+19. Client completes the ntor handshake.
+
+Caveats:
+ * Z,z MUST NOT be reused for X,x (Only 1/2 of possible Z can produce a Z').
+ * Clients SHOULD do steps 1-4 offline. (MUST do step 1 offline to mask the
+   rejection sampling when generating Z', Z, z).
+ * Servers MAY check epochHour() +- 1 to account for clock skew.
+ * Servers MAY mask failure behavior encountered when reading the obfuscated
+   client request (Step 7), by for example, continuing to read a random
+   amount of data past when it is clear that the handshake has failed and
+   discarding it immediately.
+ * Servers SHOULD detect replayed obfuscated handshakes (obfs_req_tags should
+   be unique, and are only valid for a limited time window).
+ * req_pading_min and resp_padding_min would need to change for different
+   handshakes.  The rest is generic and reusable assuming the server and
+   client have a pre-shared Curve25519 public key belonging to the server.
+
+Open questions/issues:
+
+ * Yes, having epochHour() weakens the 1W-AKE semantics due to what the
+   client things as the number of hours since the epoch being passed to the
+   server.  Removing this is possible, but then attackers can elicit a server
+   response by replaying handshakes, unless the replay detection mechanism
+   can account for every handshake ever seen.
+
+ * (B,b) being compromised will result in adversaries being able to recover
+   historical request/response bodies.  This is probably ok, since all that
+   means is they get to see X and Y....
+
+ * Yay this is mostly agnostic toward what the underlying handshake actually
+   is (B,b) can be distinct from the ntor handshake's (B,b) in the future.
