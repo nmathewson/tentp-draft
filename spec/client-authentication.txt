@@ -55,13 +55,14 @@ SERIOUSLY, IT IS NOT A FINAL DOCUMENT.
    server implementations MUST treat authentication attempts after
    receiving any other records as an error.
 
-   As part of the key exchange process to initialize the TENTP session,
-   both parties run the digest algorithm over all bytes send and received
-   in each direction to produce:
+   As part of the key exchange process to initialize the TENTP session, both
+   parties come to an agreement of a per-handshake shared value AUTH_HASH of
+   DIGEST_LEN bytes that serves to uniquely identify the handshake instance.
+   How to do this is left up to each key exchange method, but it MUST include
+   inputs from both participants and MUST be unique to each handshake
+   instance.  For example:
 
-     CLIENT_HASH = H(handshake_client_to_server_data)
-
-     SERVER_HASH = H(handshake_server_to_client_data)
+     AUTH_HASH = H(handshake_request_data | handshake_response_data)
 
    Two additional TENTP record commands are defined, CMD_AUTHENTICATE and
    CMD_AUTHENTICATE_RESPONSE.
@@ -71,15 +72,13 @@ SERIOUSLY, IT IS NOT A FINAL DOCUMENT.
    The structure of CMD_AUTHENTICATE is:
 
       struct tentp_authenticate_body {
-        // The only thing that needs a explicit length is the client_id?
+        // XXX: The only thing that needs a explicit length is the client_id?
         @ptr start_of_signed_material;
         u8 auth_type;
         u8 client_id_length;
         u8 client_id[client_id_length];
         u8 client_public_key[SIG_PKLEN];
-        // Should the two digests be combined?
-        u8 hs_client_digest[DIGEST_LEN];
-        u8 hs_server_digest[DIGEST_LEN];
+        u8 auth_hash[DIGEST_LEN];
         @ptr end_of_signed_material;
         u8 signature[SIG_LEN];
       };
@@ -90,11 +89,9 @@ SERIOUSLY, IT IS NOT A FINAL DOCUMENT.
       client_id == (the optional client identifier)
       client_id_length == len(client_id)
       client_public_key == (the client's public key, K)
-      hs_client_digest == CLIENT_HASH
-      hs_server_digest == SERVER_HASH
+      auth_hash == AUTH_HASH
       signature = SIGN(k, auth_type | client_id_length | client_id |
-                          client_public_key | hs_client_digest |
-                          hs_server_digest)
+                          client_public_key | auth_hash)
 
    The client then sends the CMD_AUTHENTICATE record to the server over
    the TENTP session, with the 'command' field in the 'tentp_record_header'
@@ -122,16 +119,13 @@ SERIOUSLY, IT IS NOT A FINAL DOCUMENT.
          the signed portion of the 'tentp_authenticate_body' is not signed
          by the correct public key, an error has occured.
 
-      6. If 'hs_client_digest' does not match the server's CLIENT_HASH
-         an error has occured.
+      6. If the 'auth_hash' value does not match the server's AUTH_HASH for
+         the session an error has occured.
 
-      7. If 'hs_server_digest' does not match the server's SERVER_HASH
-         an error has occured.
+      7. The client has successfully authenticated.
 
-      8. The client has successfully authenticated.
-
-      // Steps 5-7 should be done regardless of error before dropping the
-      // connection, not sure how to phrase that.
+      // XXX: Steps 5-6 should be done regardless of error before dropping
+      // the connection, not sure how to phrase that. (4-6?)
 
    Servers that require authentication MAY implement a reasonable time
    limit on waiting for the CMD_AUTHENTICATE record, and treat a timeout
@@ -168,7 +162,7 @@ SERIOUSLY, IT IS NOT A FINAL DOCUMENT.
 
 4. State transitions
 
-   // I suck at ascii art :(
+   // XXX: I suck at ascii art :(
 
 5. Recommended instantiation
 
@@ -185,3 +179,8 @@ SERIOUSLY, IT IS NOT A FINAL DOCUMENT.
       CMD_AUTHENTICATE if we ever want to use SPHINCS256.  This
       probably is ok for now since an Ed25519 break would be all sorts of
       bad for everything.
+
+   B. Should the handhake negitiate if authentication will be done instead?
+      (As in, as part of the handshake the client expresses if it wishes to
+       auth, and the server expresses that client auth is not
+       supported/optional/required.)
