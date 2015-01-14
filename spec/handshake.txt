@@ -78,24 +78,24 @@ The server as part of it's long term state has:
  * Curve25519 keypair (B,b)
 
 1. Client generates ephemeral Curve25519 keypair X,x
-2. Client sends a hs_request_ntor.
+2. Client sends a hs_request (ntor).
 3. Server generates a ephemeral Curve25519 keypair Y,y
 4. Server computes:
 
    secret_input = EXP(X,y) | EXP(X,b) | ID | B | X | Y | PROTOID
-   key_seed = h(t_key, secret_input)
-   verify = h(t_verify, secret_input)
-   auth_input = verify | id | b | y | x | protoid | "server"
+   key_seed = H(t_key, secret_input)
+   verify = H(t_verify, secret_input)
+   auth_input = verify | ID | B | Y | X | PROTOID | "Server"
 
-5. Server sends a hs_response ntor with:
+5. Server sends a hs_response (ntor) with:
 
-   resp.node_id = ID
-   resp.node_id_key = B
-   resp.server_pk = Y
-   resp.auth = H(t_mac, auth_input)
+   ntor.node_id = ID
+   ntor.node_id_key = B
+   ntor.server_pk = Y
+   ntor.auth = H(t_mac, auth_input)
    resp.hs_digest = H(t_hs_digest, req | resp.hs_version |
-     resp.hs_algorithm | resp.hs_response_length | resp.client_pk |
-     resp.node_id | resp.server_pk | resp.auth)
+     resp.hs_algorithm | resp.hs_response_length | ntor.node_id |
+     ntor.node_id_key | ntor.server_pk | ntor.auth)
 
 6. Client validates resp.hs_digest
 7. Client decides if it likes resp.node_id & resp.node_id_key (TOFU,
@@ -103,9 +103,9 @@ The server as part of it's long term state has:
 8. Client computes:
 
    secret_input = EXP(Y,x) | EXP(Y,b) | ID | B | X | Y | PROTOID
-   key_seed = h(t_key, secret_input)
-   verify = h(t_verify, secret_input)
-   auth_input = verify | id | b | y | x | protoid | "server"
+   key_seed = H(t_key, secret_input)
+   verify = H(t_verify, secret_input)
+   auth_input = verify | ID | B | Y | X | PROTOID | "Server"
 
 9. Client validates H(t_mac, auth_input) matches resp.auth.
 
