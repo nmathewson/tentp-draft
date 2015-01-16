@@ -86,6 +86,7 @@ The server as part of it's long term state has:
    key_seed = H(t_key, secret_input)
    verify = H(t_verify, secret_input)
    auth_input = verify | ID | B | Y | X | PROTOID | "Server"
+   hs_verify = H(t_hs_digest, secret_input)
 
 5. Server sends a hs_response (ntor) with:
 
@@ -93,21 +94,24 @@ The server as part of it's long term state has:
    ntor.node_id_key = B
    ntor.server_pk = Y
    ntor.auth = H(t_mac, auth_input)
-   resp.hs_digest = H(t_hs_digest, req | resp.hs_version |
-     resp.hs_algorithm | resp.hs_response_length | ntor.node_id |
-     ntor.node_id_key | ntor.server_pk | ntor.auth)
 
-6. Client validates resp.hs_digest
-7. Client decides if it likes resp.node_id & resp.node_id_key (TOFU,
+   digest_input = hs_verify | req | resp.hs_version | resp.hs_algorithm |
+     resp.hs_response_length | resp.ntor
+   resp.hs_digest = H(t_mac, digest_input)
+
+6. Client decides if it likes resp.node_id & resp.node_id_key (TOFU,
    pre-shared values, whatever).
-8. Client computes:
+7. Client computes:
 
    secret_input = EXP(Y,x) | EXP(Y,b) | ID | B | X | Y | PROTOID
    key_seed = H(t_key, secret_input)
    verify = H(t_verify, secret_input)
    auth_input = verify | ID | B | Y | X | PROTOID | "Server"
+   hs_verify = H(t_mac, secret_input)
 
-9. Client validates H(t_mac, auth_input) matches resp.auth.
+8. Client validates H(t_mac, auth_input) matches resp.auth.
+9. Client validates resp.hs_digest, using the derived hs_verify, digest_input,
+   and hs_digest values.
 
 10. Both sides agree on key_seed, and hs_digest.
 
