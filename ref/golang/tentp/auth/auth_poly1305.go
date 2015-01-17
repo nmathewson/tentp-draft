@@ -5,25 +5,18 @@
 package auth
 
 import (
-	"bytes"
-
-	"golang.org/x/crypto/poly1305"
+	"github.com/yawning/poly1305"
 )
 
 const (
-	authKeyLen = 32
-	authLen    = poly1305.TagSize
+	authKeyLen = poly1305.KeySize
+	authLen    = poly1305.Size
 )
 
 // Poly1305 implements the TENTP AUTH algorithm via the Poly1305 MAC.
-//
-// WARNING: To work around the golang.org/x/crypto implementation not
-// supporting incremental processing, a full copy of the summed data is
-// created, and then processed all at once when Sum() is called.
 type Poly1305 struct {
+	poly1305.Poly1305
 	keyValid bool
-	key      [authKeyLen]byte
-	buf      bytes.Buffer
 }
 
 func (p *Poly1305) Write(b []byte) (n int, err error) {
@@ -32,35 +25,28 @@ func (p *Poly1305) Write(b []byte) (n int, err error) {
 		// hash.Hash behaves.
 		panic(ErrKeyNotSet)
 	}
-	return p.buf.Write(b)
+	return p.Poly1305.Write(b)
 }
 
 func (p *Poly1305) Sum(b []byte) []byte {
 	if !p.keyValid {
 		panic(ErrKeyNotSet)
 	}
-	var tag [authLen]byte
-	poly1305.Sum(&tag, p.buf.Bytes(), &p.key)
-	b = append(b, tag[:]...)
-	return b
+	return p.Poly1305.Sum(b)
 }
 
 func (p *Poly1305) Key(key []byte) error {
 	if len(key) != authKeyLen {
 		return ErrInvalidKeyLength
 	}
-	p.Clear()
-	copy(p.key[:], key)
+	p.Init(key)
 	p.keyValid = true
 	return nil
 }
 
 func (p *Poly1305) Clear() {
 	p.keyValid = false
-	for i := range p.key {
-		p.key[i] = 0
-	}
-	p.buf.Reset()
+	p.Poly1305.Clear()
 }
 
 func (p *Poly1305) Size() int {
