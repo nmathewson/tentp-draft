@@ -9,7 +9,6 @@ import (
 	"crypto/rand"
 	"io"
 	"net"
-	"syscall"
 	"testing"
 	"time"
 
@@ -56,21 +55,21 @@ func (c *loopbackConn) Read(b []byte) (n int, err error) {
 		return c.rxBuf.Read(b)
 	}
 	if *c.closed {
-		return 0, syscall.EBADFD
+		return 0, io.ErrClosedPipe
 	}
 	return 0, nil
 }
 
 func (c *loopbackConn) Write(b []byte) (n int, err error) {
 	if *c.closed {
-		return 0, syscall.EBADFD
+		return 0, io.ErrClosedPipe
 	}
 	return c.txBuf.Write(b)
 }
 
 func (c *loopbackConn) Close() error {
 	if *c.closed {
-		return syscall.EBADFD
+		return io.ErrClosedPipe
 	}
 	*c.closed = true
 	return nil
@@ -85,15 +84,15 @@ func (c *loopbackConn) RemoteAddr() net.Addr {
 }
 
 func (c *loopbackConn) SetDeadline(t time.Time) error {
-	return syscall.ENOTSUP
+	return ErrNotSupported
 }
 
 func (c *loopbackConn) SetReadDeadline(t time.Time) error {
-	return syscall.ENOTSUP
+	return ErrNotSupported
 }
 
 func (c *loopbackConn) SetWriteDeadline(t time.Time) error {
-	return syscall.ENOTSUP
+	return ErrNotSupported
 }
 
 func newLoopbackConn() (net.Conn, net.Conn) {

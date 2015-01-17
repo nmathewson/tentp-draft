@@ -10,7 +10,7 @@ import (
 	"errors"
 )
 
-// AES implements the TENTP ENC algorithm via CTR-AES256.
+// AES256 implements the TENTP ENC algorithm via CTR-AES256.
 type AES256 struct {
 	c cipher.Stream
 }

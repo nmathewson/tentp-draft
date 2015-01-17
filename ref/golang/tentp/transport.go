@@ -21,7 +21,6 @@ import (
 	"math"
 	"net"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/nmathewson/tentp-draft/ref/golang/tentp/auth"
@@ -42,28 +41,35 @@ const (
 	cmdClose
 )
 
-// ErrInvalidKeyLength is the error returned when a provided key is invalid.
-var ErrInvalidKeyLength = errors.New("tentp: invalid key length")
+var (
+	// ErrInvalidKeyLength is the error returned when a provided key is
+	// invalid.
+	ErrInvalidKeyLength = errors.New("tentp: invalid key length")
 
-// ErrCounterWrapped is the error returned when the send or receive counter
-// wrapped.  It is currently non-fatal (though further sends or recives will be
-// impossible), but this may change to be fatal.
-var ErrCounterWrapped = errors.New("tentp: counter wrapped")
+	// ErrCounterWrapped is the error returned when the send or receive counter
+	// wrapped.  It is currently non-fatal (though further sends or recives
+	// will be impossible), but this may change to be fatal.
+	ErrCounterWrapped = errors.New("tentp: counter wrapped")
 
-// ErrInvalidMessageLength is the error returned when the message length is
-// invalid.
-var ErrInvalidMessageLength = errors.New("tentp: invalid msg length")
+	// ErrInvalidMessageLength is the error returned when the message length is
+	// invalid.
+	ErrInvalidMessageLength = errors.New("tentp: invalid msg length")
 
-// ErrInvalidHeaderLength is the error returned when the header length is
-// invalid.
-var ErrInvalidHeaderLength = errors.New("tentp: invalid header length")
+	// ErrInvalidHeaderLength is the error returned when the header length is
+	// invalid.
+	ErrInvalidHeaderLength = errors.New("tentp: invalid header length")
 
-// ErrInvalidCommand is the error returned when a record containing a invalid
-// command is received.
-var ErrInvalidCommand = errors.New("tentp: invalid command")
+	// ErrInvalidCommand is the error returned when a record containing an
+	// invalid command is received.
+	ErrInvalidCommand = errors.New("tentp: invalid command")
 
-// ErrInvalidTag is the error returned when the record authentication fails.
-var ErrInvalidTag = errors.New("tentp: invalid auth tag")
+	// ErrInvalidTag is the error returned when the record authentication
+	// fails.
+	ErrInvalidTag = errors.New("tentp: invalid auth tag")
+
+	// ErrNotSupported is the error returned when a call is not supported.
+	ErrNotSupported = errors.New("tentp: not supported")
+)
 
 type tentpKeyState struct {
 	auth       auth.Auth
@@ -238,15 +244,15 @@ func (c *tentpConn) RemoteAddr() net.Addr {
 }
 
 func (c *tentpConn) SetDeadline(t time.Time) error {
-	return syscall.ENOTSUP
+	return ErrNotSupported
 }
 
 func (c *tentpConn) SetReadDeadline(t time.Time) error {
-	return syscall.ENOTSUP
+	return ErrNotSupported
 }
 
 func (c *tentpConn) SetWriteDeadline(t time.Time) error {
-	return syscall.ENOTSUP
+	return ErrNotSupported
 }
 
 func (c *tentpConn) recvRecord() (rec *tentpRecord, err error) {
@@ -299,7 +305,6 @@ func (c *tentpConn) recvRecord() (rec *tentpRecord, err error) {
 
 	// If the record has payload and/or padding...
 	if rec.hdr.length > 0 || rec.hdr.paddingLength > 0 { // ST -> READING BODY
-
 		// Read body_auth | encrypted_body.
 		bLen := int(rec.hdr.length) + int(rec.hdr.paddingLength)
 		authBody := make([]byte, st.authLen+bLen)
