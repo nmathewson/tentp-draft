@@ -1,0 +1,291 @@
+
+Transport notes:
+
+- What's the deal with closing?  Need to specify it better.  Distinguish
+  error and close?
+
+ (I brought this one up because I'm not sure if we have half-open support, and we probably should)
+
+- Maximum message size implies maximum buffer size needs to be 16K.  That
+  means that I can force you to allocate 16K by telling you I'm sending you
+  a 16K message, then sending you 16K minus 1 byte.  Wonder if we should have
+  a way to turn down maximum receive windows for low-memory situations?  Or
+  expose age-of-buffer API to enable dos-resistance strategies?
+  
+  Hmm this feels like an implementation detail?  This isn't any worse than TLS IIRC.  We could negotiate a max message size that's < 16 KiB as part of the connection setup?  Pick the lower of what the client wants/server wants? 
+
+ Well, with TLS there's no actual way to say "Don't send me any record bigger than 4K."
+ 
+   Yeah, though we'll need to think about bounds and DoS issues and fingerprinting stuff there.  Maybe, maybe not. :)  Let's think about it.
+   
+   Specify a minimum must support size, negotiate beween spec min, and 16 kib.
+
+   And restrict sizes to powers of two?
+   
+   For the MTU?  Probably no?  Ethernet frame is 1500 bytes....
+
+  For the max message size.
+  
+I think 576 - header overhead / 1280 - header overhead (ipv4/ipv6) is a fine "minimum mtu" (all links must support IP packets that big).  (ugh my low level networking background is showing...)
+
+  One challenge here then is that we want to have control message be bigger
+  
+  Hmm.  There's no explicit need to constrain our frame size to the IP frame size either, so I think we can just basically pick something reasonable.
+
+ We could say it must be (1<<N), between 2K and 16K inclusive?
+ 
+  (This is easy to change if we decide to make the mechanism)
+  
+  Client/server negitiates N for now I guess, sure.  SImple to implement.
+
+Current handshake:
+
+- What to do on unrecognized version/algorithm?  Negotiation or no?
+
+  Speaking of negotiation...  Could, kind of scary.  At that point we could take the round trip and always negotiate...
+
+ Yeah.  I kinda feel like we're bound to get there, perhaps.  Like, when I imagine "what happens when there's a v2"... I think that they will either be 100% incompatible, and need to use different ports... or there is some kind of version negotiation going on.
+
+For unobfuscated handshakes, negotiating is fine, if I need to change the obfuscation format/method, life gets kind of sad. :/  They don't need to be the same though, and the obfscuated port SHOULD be different from plain, probably.
+
+  understood.
+  
+  it's okay if the obfuscated one is different.
+  
+  Yeah.
+
+  So, maybe we should specify two versions, or two algorithms, or something to start with, just to make sure we have negotiation right?
+  
+  Sure, I guess something ntor based, and something just kex and sign with the server's ed25519 key or something...
+
+  And then remove one of them from the draft, before v1 ? :)
+  
+  Both are ok now that i think about it, all tor nodes that support this will have ed25519 keys right? >.>
+
+ Right, and if we do certificate chains, then batch verification becomes a thing.
+
+ *** Back on this topic: It seems that one of the ways TLS went wrong is by negotiating too many things, and negotiating them unencrypted.  But we *do* want to negotiate some stuff, like protocol version, and maybe max-record size.  This bears thinking. (I sense a session at valencia to bring more people into this, since I described it to the APT people as tenatively obfs5 heh)
+
+heh
+
+I'm hoping we can get as much as possible figured out before then, though.  This is definitely an area where fewer designers might mean a simpler start.
+
+
+Yeah, plus everyone and their parents would want their features, and we'll end up with TLS. >.>
+
+So, for negotiation, the very minimum we could do (beyond nothing) would be negotiatiating protocol versions.
+
+Do we envision supporting multiple crypto primitives, simultaniously?  I think serious breaks in any of our primitives are close to catastrophic..
+
+Within a single version?  I'm not sure why.
+
+Yeah ok.
+
+Like, there's the AESNI vs ChaCha20 which is faster question... but ChaCha20 is fast enough anywhere afaict.
+
+The rust chacha code I've been playing with I can do 3x gig-e on my mobile haswell, so... yeah.  (and it's pure rust, though vectorized).
+
+Right.  That starts to put it in territory where it's unlikely that your crypto will be your critical-path if you're doing anything interesting to generate your data.
+
+mmhmm.
+
+I don't see us ever using anything non-poly1305 either, unless there's a massive math fail somewhere.  The security proof is p good.
+
+So, the other usual argument for multiple cipher choices is that it's very hard to change to something fast if it isn't already deployed.
+
+IOW, if you have ChaCha20-poly1305 and AES-GCM (not recommending it) at the same time, then you can respond to a break in either by everybody turning it off... whereas if the way we replace a cipher is with versioning, then we need to have a new version ready to go.
+
+Still, maybe this is old-fashioned thinking.  It's not the days when nobody how to make ciphers any more.
+
+Bumping the version and replacing this wouldn't take that long if we write the code well, and we have an AES-GCM implementation.
+
+Imagine the world where we're not the only implementation, though.
+
+True.. We don't actually need to negotiate the link cipher and digest algorithm up front right?  Trying to reduce the amount of stuff sent in the first round trip.  
+
+Right, that'll help obfuscation.
+
+As I'm envisioning how bfuscation works, I was thinking of skipping the negotitation step, but that might just be me being paranoid.  The more stuff that needs to go back and forth in a set manner, the harder it is to hide (though most of the badguys aren't doing sophisticated statistical attacks yet).
+
+One thing that _might_ want to coexist is conventional and PQ cryptography.  Like, we might want to simultaneously have an ntor-style and a basket-style handshake available.
+
+Yeah, so, negotiate overall protocol version, supported KEX methods (using the ssh terminology here).... 
+
+Supported (Authenticated)KEX 
+
+The difference between a version and a method is that version choice is supposed to be "highest supported" and a method selection is supposed to be "whatever you think best" I guess.
+
+Version bumps would be for when we decide to change the frame format or whatever (ugh, do we need to version the kex methods too.... Guess 2 bytes per method isn't that bad :/)
+
+This is in danger of becoming nonminimal.  I wonder if we can get it down to one bitfield or something.  Maybe not.
+
+If we're ok with bumping the protocol version each time we change the kex implementation then sure?  That makes me kind of sad though.
+
+right, and it makes it hard to support multiple kex implementations side-by-side.  Like, if you and I both support PQ but neither of us has a SPHINCS key, what do we do?  We say we support it... in case the other wants to present a SPHINCS handshake... but then we choose not to use it.  Which looks like there's a version downgrade happening, I guess
+
+Only negotiate stuff that you can complete?  Dunno.  For the signature case, it's not too bad, server either has a key or doesn't, and can respond accordingly.  (Auth is an orthogonal issue).
+
+I wonder if this is at a point where we should try to outline a protocol and see how we like it and iterate.
+
+Yeah probably.  Look over the rest of the stuff maybe otherwise we'll be stuck on negotiation for a while.
+
+Right.
+
+- Where/when is next stage established?
+
+- Need overall state machine including client-auth.
+
+  (I can write this if needed)
+
+- Allow client to optionally specify a desired identity?
+
+  (Yes this would put us in SNI territory.)
+
+- 20 bytes for node id is a bit too tied to tor/sha1
+
+Hmm ntor is a tor-ism, if we settle on the single curve25519 + 1 signature handshake, we don't need this, so it might be ok to just leave it for now?
+
+ could be.  Or maybe we want a keytype/keylen/key triple instead?
+
+Obfuscated handshake:
+
+- What does epochHour imply about connections a server can accept per minute
+  at a given storage capacity?
+
+The epochHour construct is to limit the size of the backing storage needed to catch replays.  We could do this probabalistifcally (eg: 1 MiB bloomfilter would cover even the most busy tor nodes, at the cost of a false positives).
+
+  ISTR that the quic design did some math here to say how much they'd need.  They were thinking of things on the scale of google servers though.
+  
+  It's worth noting that this MUST be active replay resilient because China will write a module for it.  So we need to think about this.
+
+  Right.  Though in the end it turns into a race where all traffic not identifiable is treated as suspect and to-be-blocked.  But that's the PT armsrace.
+
+That's the iran case, and it ends there, yeah.  Unless we bust out stegonography or something....
+
+General:
+
+- Blake2 or sha3 instead of sha256/HMAC-sha256?
+
+This is a bit bikesheddy, but SHA2 is looking kinda oldish. (And the necessity of the HMAC construction is a sad joke)
+
+Between BLAKE2 and SHA3, I'd opt for BLAKE2, but either works, no strong opinion.  (I trust myself to implement BLAKE2, don't know enough about SHA3)
+
+Right, blake2b is easy and fun.  Do you think this is a good idea though?
+
+There's enough library support out there that I don't think it's a bad idea at least.  HKDF is defined in terms of HMAC, but using a keyed hash is probably ok.
+
+Handshake and negotiation thoughts:
+
+  - Let's think a little more about:
+    - Lowering DoS multipliers
+    
+    
+    
+    
+    Maybe.  I'm thinking that it's possibly bad that an evil client can just make a connection and send junk instead of doing a curve25519 pk generation, thereby forcing the server to do real computation.  Not sure if I should care though.  You did remind me that ntor is cheap...
+    
+    So's a single basemult + ed25519 signature, so.. yeah..  We're in better shape than TLS is here already... (Where an evil client can ask for DHE or something really slow).  We could ratelimit incoming conenctions in the implementation as well somehow...  
+    
+    Yeah; and the workarounds here are pretty expensive FWIW.  Maybe think about this later.
+    
+    - Supporting more crypto primitives
+    
+We talked a bit about this above; let's not talk about it now.
+    
+    - Supporting more key types in the future.
+
+(eg something in GF(2^521-1) or something
+
+or SIDH I guess, once that's actually usable.  This boils back down to negotiation/handshake stuff I think.  If we do it right, we can do this.
+
+Right.  A different key type is just a different handshake type.
+
+    - Avoiding fingerprinting in the base protocol via [1,1]?
+    - What to do if versions aren't matching.
+    
+    This also comes down to negotiation.
+
+  - One option for future-proofing: all versions have a set of must-implement
+    ciphers and key types, and ONLY that set?
+    
+    I think for framing specifing the AUTH/ENC rigidly is ok.  (be it one and only one or a set of them).
+
+ack
+
+    - No; then what's the point of anything other than a default.
+
+(Back to ease of fixing stuff if there's a catastrophic break)
+
+yeah
+
+    - Maybe just version negotiation is needed?
+
+    - But some version will need to support multiple key types.
+
+ - Describe a place for certificates to go?
+    
+      I think we want to have some way to specify "here's where you put a certificate chain" for the client-side and server-side, or else everyone will reinvent TLS badly.
+      
+      We should allow but not require or implement x509 as an extension.
+
+  - IMO it's okay to have more round-trips if we must.
+
+Obfuscation:
+
+  - Can we have a midrange obfuscation that doesn't require client to know a
+    secret for the server?  Okay if it resists passive fingerprinting
+    but not active?  Is this useful?
+
+Dunno how useful this would be.  Not very for us, since we can easily publish the shared secret.  We could do something like obfs3 (but with ECC goodness) fairly easily, but I'm not convinced that it's worth implementing.
+
+One reason I was thinking of this is because of some of the NSA documents that suggest that for at least some snoops, at least some of the time, trivial protocol fingerprinting makes a significant differentce.  It's good that regular users of this protocol won't leak which application is in use, like TLS tends to do, but I do wish that we had some way to make it nontrivial for a cheap firewall to identify in bulk traffic.
+
+Even the obfs2 trick might be better than nothing :)
+
+
+So, we can specify obfs3 with Elligator2, send the representitive | padding | mac, both ways.  That should actually cover everything except iran/china currently.  Most commercial DPI systems shouldn't catch that, and I was planning on using elligator2 for the real obfuscation mode anyway.  (this being optional and documented would be a fine addition imo)
+
+Sounds good-ish.  It'll be a bit tricky to shove version negotiation into there, but not _that_ tricky.
+
+For example:
+
+Use one MAC for v0, one MAC for v1, ...
+
+MAC is much cheaper than the rest of the stuff if we use a sane MAC
+
+Yeah, apply a tweak to the mac per version.
+
+
+I think defering "how do we obfuscate stuff" till after we decide "what the handshake/auth sequence looks like" might be better.  I can come up with something that'll hide it, if I know what I need to hide.
+If our mac is blake2 based, there are even well-defined ways to include that tweak. :)
+
+That makes sense to me.
+
+yes indeed.
+
+Do you want to try to draft a version/kex negotiation protocol, or should I try to poke at one?
+
+(I would love to poke at one, but it's not going to be easy for me to find free time in the next day or 2)
+
+
+There's no real rush here right?  Go ahead and have fun, if it looks like it'll get pushed back a lot further, tell me and I'll cook something up?
+
+I have enough to keep myself occupied in the meanwhile I think, and we just demolished the v0 proposal I made :P
+
+Hey, it was a good proposal!  We just want it to do a tiny bit more.
+
+Yah.  I've spent too much time in pt land, so I wasn't thinking big enough.
+
+I'm kinda hoping this is not just _our_ TLS replacement, but all reasonable peolple's TLS replacement.
+
+TLS has failed by trying to be right for HTTPS.  If we remove that requirement, so many other things get better
+
+I think this design is a lot saner than most of what exists in the space.  SOme of the DJB things are ok designs but aren't quite flexible enough.  And this is saner than TLS, SSH and IPsec.
+
+yeah.  It's best to get this right the first time though. :)
+
+Extremely so (saner).
+
+Okay.  I'm going to move back to IRC now; thanks for working on this!
+
+^_^ thanks for the feedback.
